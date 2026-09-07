@@ -124,7 +124,6 @@ export async function POST(request: Request) {
           { role: 'system', content: responseSystem },
           ...messages.map(({ role, content }) => ({ role, content })),
         ], 420, { timeoutMs: model === responseCandidates[0] ? 12_000 : model === 'glm-5.3-flash' ? 12_000 : 15_000 });
-        if (candidate.length < 80) throw new Error(`Response too short: ${candidate.length}`);
         reply = candidate;
         responseModel = model;
         attempts.push({ stage: 'response', model, success: true });
