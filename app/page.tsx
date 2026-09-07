@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 type Mode = 'SA' | 'SR' | 'CA' | 'CR';
 type Message = { role: 'user' | 'assistant'; content: string; at: string; trace?: unknown };
+type TaskEvaluation = { taskId: string; condition: Mode; ratings: Record<number, number>; submittedAt: string };
 type WebMcpContext = { registerTool: (tool: object, options?: { signal?: AbortSignal }) => void | Promise<void> };
 
 const LATIN_SQUARE: Mode[][] = [
@@ -30,6 +31,19 @@ const TASKS = [
   { id: '04', domain: '数字生活', title: '数字生活', description: '数字生活设计关注数字技术如何影响人们的工作、消费、社交与日常决策。你可以从信息理解与自主控制、隐私安全、数字身份、智能服务、网络社交、数字包容、平台规则、AI应用以及技术便利与生活负担的平衡等方向展开，探索更清晰、可信、可控且包容的数字体验，也可以提出其他相关议题。' },
 ];
 
+const EVALUATION_ITEMS = [
+  { dimension: '感知可用性', text: '该AI原型的功能能够满足我完成本次任务的需要。' },
+  { dimension: '感知可用性', text: '该AI原型易于使用。' },
+  { dimension: '交互体验', text: '我与该AI的交互是一段连贯的对话。' },
+  { dimension: '交互体验', text: '该AI能够理解并保持当前对话的上下文。' },
+  { dimension: '交互体验', text: '总体而言，我对与该AI的交互体验感到满意。' },
+  { dimension: '构想发展支持', text: '该AI帮助我探索了不同的设计想法或可能性。' },
+  { dimension: '构想发展支持', text: '该AI帮助我找到可以继续发展当前构想的方向。' },
+  { dimension: '构想发展支持', text: '该AI帮助我有效地完善了当前设计构想。' },
+  { dimension: '反思支持', text: '该AI促使我从新的角度看待当前设计问题。' },
+  { dimension: '反思支持', text: '该AI促使我重新审视当前构想中的假设、限制或被忽略的问题。' },
+];
+
 function formatTime(total: number) {
   return `${Math.floor(total / 60).toString().padStart(2, '0')}:${(total % 60).toString().padStart(2, '0')}`;
 }
@@ -49,6 +63,9 @@ export default function Home() {
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [researcherOpen, setResearcherOpen] = useState(false);
+  const [evaluationOpen, setEvaluationOpen] = useState(false);
+  const [ratings, setRatings] = useState<Record<number, number>>({});
+  const [evaluations, setEvaluations] = useState<Record<string, TaskEvaluation>>({});
   const [showCondition, setShowCondition] = useState(false);
   const [completed, setCompleted] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -59,8 +76,14 @@ export default function Home() {
   useEffect(() => { setSequenceIndex(sequenceFromParticipant(participantId)); }, [participantId]);
 
   useEffect(() => {
+    try { setEvaluations(JSON.parse(localStorage.getItem(`design-lab:evaluations:${participantId}`) || '{}')); } catch { setEvaluations({}); }
+  }, [participantId]);
+
+  useEffect(() => { localStorage.setItem(`design-lab:evaluations:${participantId}`, JSON.stringify(evaluations)); }, [evaluations, participantId]);
+
+  useEffect(() => {
     setMessages([]);
-    setRemaining(15 * 60); setRunning(false); setCompleted(false);
+    setRemaining(15 * 60); setRunning(false); setCompleted(false); setEvaluationOpen(false); setRatings({});
   }, [taskIndex, mode]);
 
   useEffect(() => {
@@ -136,7 +159,7 @@ export default function Home() {
   }
 
   function exportSession() {
-    const data = { participantId, sequence: sequenceIndex + 1, taskOrder: taskIndex + 1, task, condition: mode, conditionLabel: MODES[mode].label, durationSeconds: 900 - remaining, completed, exportedAt: new Date().toISOString(), messages };
+    const data = { participantId, sequence: sequenceIndex + 1, taskOrder: taskIndex + 1, task, condition: mode, conditionLabel: MODES[mode].label, durationSeconds: 900 - remaining, completed, evaluation: evaluations[sessionKey] || null, exportedAt: new Date().toISOString(), messages };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob); const link = document.createElement('a');
     link.href = url; link.download = `${participantId}_task-${task.id}_${mode}.json`; link.click(); URL.revokeObjectURL(url);
@@ -170,7 +193,7 @@ export default function Home() {
         <aside className="session-panel">
           <div className="eyebrow">SESSION</div><h2>本次实验</h2><dl><div><dt>实验序列</dt><dd>{sequenceIndex + 1} / 4</dd></div><div><dt>任务</dt><dd>{taskIndex + 1} / {TASKS.length}</dd></div><div><dt>对话轮次</dt><dd>{messages.filter((m) => m.role === 'user').length}</dd></div><div><dt>当前状态</dt><dd>{completed ? '已完成' : running ? '进行中' : '未开始'}</dd></div></dl>
           <div className="protocol-note"><Sparkles size={17} /><p>请自然地与AI讨论。你可以采纳、质疑、修改或拒绝它的建议。</p></div>
-          <Button className="complete-btn" disabled={messages.filter((m) => m.role === 'user').length === 0} onClick={() => { if (completed && taskIndex < TASKS.length - 1) { setTaskIndex((index) => index + 1); } else { setCompleted(true); setRunning(false); } }}><Check />{completed && taskIndex < TASKS.length - 1 ? '进入下一任务' : '完成当前任务'}</Button>
+          <Button className="complete-btn" disabled={messages.filter((m) => m.role === 'user').length === 0} onClick={() => { if (completed && taskIndex < TASKS.length - 1) { setTaskIndex((index) => index + 1); } else if (!completed) { setRunning(false); setEvaluationOpen(true); } }}><Check />{completed && taskIndex < TASKS.length - 1 ? '进入下一任务' : completed ? '本任务已完成' : '完成当前任务'}</Button>
           <Button variant="outline" className="export-btn" onClick={exportSession}><Download />导出本次记录</Button>
         </aside>
       </div>
@@ -182,6 +205,13 @@ export default function Home() {
         <fieldset><legend>当前任务分配</legend><div className="assignment-strip">{TASKS.map((item, index) => <span key={item.id} className={index === taskIndex ? 'current' : ''}><b>{item.domain}</b>{MODES[LATIN_SQUARE[sequenceIndex][index]].short}</span>)}</div></fieldset>
         <label className="check-row"><input type="checkbox" checked={showCondition} onChange={(e) => setShowCondition(e.target.checked)} />在参与者界面显示条件名称</label>
         <div className="modal-actions"><Button variant="outline" onClick={resetSession}><RotateCcw />重置当前任务</Button><Button onClick={() => setResearcherOpen(false)}>保存设置</Button></div>
+      </dialog></div>}
+
+      {evaluationOpen && <div className="modal-backdrop evaluation-backdrop"><dialog open className="evaluation-modal" aria-labelledby="evaluation-title">
+        <div className="evaluation-heading"><div><span className="eyebrow">TASK {task.id} EVALUATION</span><h2 id="evaluation-title">评价刚刚使用的AI原型</h2><p>请根据本次任务中的实际体验作答。1＝非常不同意，5＝非常同意。</p></div></div>
+        <div className="evaluation-scale"><span /><span>1<br/><small>非常不同意</small></span><span>2</span><span>3</span><span>4</span><span>5<br/><small>非常同意</small></span></div>
+        <div className="evaluation-items">{EVALUATION_ITEMS.map((item, index) => <div className="evaluation-row" key={item.text}><div><span>{item.dimension}</span><p>{index + 1}. {item.text}</p></div>{[1,2,3,4,5].map((value) => <label key={value}><input type="radio" name={`rating-${index}`} value={value} checked={ratings[index + 1] === value} onChange={() => setRatings((current) => ({ ...current, [index + 1]: value }))}/><i>{value}</i></label>)}</div>)}</div>
+        <div className="evaluation-actions"><Button variant="outline" onClick={() => { setEvaluationOpen(false); setRunning(remaining > 0); }}>返回任务</Button><Button disabled={Object.keys(ratings).length !== EVALUATION_ITEMS.length} onClick={() => { const result = { taskId: task.id, condition: mode, ratings, submittedAt: new Date().toISOString() }; setEvaluations((current) => ({ ...current, [sessionKey]: result })); setCompleted(true); setEvaluationOpen(false); }}>提交评价</Button></div>
       </dialog></div>}
     </main>
   );
