@@ -46,16 +46,19 @@ async function callDeepSeek(
       ...(options.json ? { response_format: { type: 'json_object' } } : {}),
     }),
   }).finally(() => clearTimeout(timeout));
-  if (!response.ok) throw new Error(`DeepSeek ${response.status}`);
-  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const content = data.choices?.[0]?.message?.content?.trim();
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(`DeepSeek ${response.status}: ${detail}`);
+  }
+  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string; reasoning_content?: string } }> };
+  const message = data.choices?.[0]?.message;
+  const content = (message?.content || message?.reasoning_content)?.trim();
   if (!content) throw new Error('DeepSeek returned empty content');
   return content;
 }
 
 function modelCandidates() {
-  const primary = process.env.DEEPSEEK_MODEL || 'minimax-m3';
-  return [...new Set([primary, 'glm-5.3-flash'])];
+  return ['glm-5.3-flash', 'qwen3.8-flash'];
 }
 
 function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRepresentation {
@@ -87,6 +90,7 @@ async function searchTavily(apiKey: string, category: SearchCategory, query: str
 }
 
 export async function POST(request: Request) {
+  const diagnostics: Array<{ stage: 'representation' | 'response'; model: string; success: boolean; reason?: string }> = [];
   try {
     const body = (await request.json()) as { mode?: Mode; task?: { title?: string }; messages?: ChatMessage[] };
     const mode = body.mode && STYLE[body.mode] ? body.mode : 'SA';
@@ -96,7 +100,7 @@ export async function POST(request: Request) {
     if (!deepSeekKey || !tavilyKey) return Response.json({ error: 'AI检索服务尚未完成配置，请联系研究人员。' }, { status: 503 });
 
     const candidates = modelCandidates();
-    const attempts: Array<{ stage: 'representation' | 'response'; model: string; success: boolean; reason?: string }> = [];
+    const attempts = diagnostics;
     const representation = localRepresentation(body.task?.title || '开放设计', messages);
     const representationModel = 'local-structured-processing';
     attempts.push({ stage: 'representation', model: representationModel, success: true });
@@ -111,7 +115,7 @@ export async function POST(request: Request) {
       label: search.label,
       query: search.query,
       ...('error' in search ? { error: search.error } : {}),
-      results: search.results.map(({ title, url, content, score }) => ({ title, url, content: content.slice(0, 320), score })),
+      results: search.results.map(({ title, url, content, score }) => ({ title: title.slice(0, 120), url, content: content.slice(0, 160), score })),
     }));
 
     const responseSystem = `你是一名参与早期概念设计的AI协作伙伴。围绕开放设计主题“${body.task?.title || '开放设计'}”与用户进行多轮中文对话。下面提供结构化任务表征与三类外部检索结果。优先选择相关性最高且能直接回应当前输入的材料，不要罗列全部资料，不得虚构来源。回复控制在200至260个汉字、4至6个完整句子；包含3至4个有实质内容的信息单元，其中至少两项应是来自检索材料的具体事实、案例、机制或现实约束，并说明它们与当前构想的关系，再依照实验条件辅助方案推进或引导反思。不要只给出分类框架、笼统方向或重复用户输入，不使用Markdown标题或列表。实验条件仅控制回复方式，不得改变任务主题或捏造用户意图。\n\n实验条件：${STYLE[mode]}\n\n结构化任务表征：${JSON.stringify(representation)}\n\n外部信息集合：${JSON.stringify(evidence)}`;
