@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
 type Mode = 'SA' | 'SR' | 'CA' | 'CR';
-type Message = { role: 'user' | 'assistant'; content: string; at: string };
+type Message = { role: 'user' | 'assistant'; content: string; at: string; trace?: unknown };
 type WebMcpContext = { registerTool: (tool: object, options?: { signal?: AbortSignal }) => void | Promise<void> };
 
 const LATIN_SQUARE: Mode[][] = [
@@ -127,11 +127,12 @@ export default function Home() {
     setMessages(next); setInput(''); setLoading(true);
     try {
       const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, task, messages: next }) });
-      const data = (await response.json()) as { reply?: string; error?: string };
+      const data = (await response.json()) as { reply?: string; error?: string; trace?: unknown };
       if (!response.ok || !data.reply) throw new Error(data.error || '请求失败');
-      setMessages((current) => [...current, { role: 'assistant', content: data.reply!, at: new Date().toISOString() }]);
-    } catch {
-      setMessages((current) => [...current, { role: 'assistant', content: '当前无法连接AI服务。你的输入已经保留，请稍后重试或联系研究人员检查连接设置。', at: new Date().toISOString() }]);
+      setMessages((current) => [...current, { role: 'assistant', content: data.reply!, at: new Date().toISOString(), trace: data.trace }]);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : '当前无法连接AI服务';
+      setMessages((current) => [...current, { role: 'assistant', content: `${reason}。你的输入已经保留，请稍后重试或联系研究人员。`, at: new Date().toISOString() }]);
     } finally { setLoading(false); }
   }
 
