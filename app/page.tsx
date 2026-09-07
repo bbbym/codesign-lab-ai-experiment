@@ -24,10 +24,10 @@ const MODES: Record<Mode, { label: string; short: string }> = {
 };
 
 const TASKS = [
-  { id: '01', domain: '健康福祉', title: '未来健康与福祉' },
-  { id: '02', domain: '学习教育', title: '未来学习与教育' },
-  { id: '03', domain: '社区文化', title: '未来社区与文化' },
-  { id: '04', domain: '数字生活', title: '未来数字生活' },
+  { id: '01', domain: '健康福祉', title: '健康与福祉', description: '关注人们在身体、心理或日常生活中的健康需求，探索能够改善其体验的产品、服务或系统。' },
+  { id: '02', domain: '学习教育', title: '学习与教育', description: '关注不同学习者在获取知识、持续学习或协作交流中的问题，探索更合适的学习支持方式。' },
+  { id: '03', domain: '社区文化', title: '社区与文化', description: '关注社区生活、公共参与与文化交流中的需求，探索促进连接、共享或在地体验的设计机会。' },
+  { id: '04', domain: '数字生活', title: '数字生活', description: '关注人们使用数字产品与服务时的体验，探索便利性、可理解性、安全与自主控制之间的平衡。' },
 ];
 
 const OPENERS: Record<Mode, string> = {
@@ -157,7 +157,7 @@ export default function Home() {
 
       <div className="workspace">
         <aside className="task-panel">
-          <div className="eyebrow">TASK {task.id}</div><h1>{task.title}</h1>
+          <div className="eyebrow">TASK {task.id}</div><h1>{task.title}</h1><p className="task-description"><b>主题解读</b>{task.description}</p>
           <div className="task-list" aria-label="任务进度">{TASKS.map((item, index) => <button key={item.id} className={index === taskIndex ? 'active' : ''} onClick={() => setTaskIndex(index)}><span>{item.id}</span><span>{item.domain}</span></button>)}</div>
         </aside>
 
