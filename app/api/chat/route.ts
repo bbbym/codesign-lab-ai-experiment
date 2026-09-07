@@ -101,15 +101,16 @@ export async function POST(request: Request) {
 
     const representationPrompt = `你负责将一段早期设计对话整合为结构化任务表征，并规划三类外部检索。当前开放设计主题为“${body.task?.title || '开放设计'}”。不得替用户确定尚未表达的目标、用户群或方案；缺失信息应放入unresolved_questions。只返回合法JSON，不要添加解释或Markdown。JSON结构必须为：{"design_goal":"","user_needs":[],"use_context":[],"constraints":[],"unresolved_questions":[],"search_topics":{"user_context":"","precedents":"","implementation":""}}。三条search_topics分别检索：用户需求与使用情境、相关案例与现有方案、实施条件与发展环境；应结合当前对话动态生成，彼此不重复，表述为适合网页搜索的简洁查询。`;
     const candidates = modelCandidates();
+    const representationCandidates = [...new Set(['qwen3.8-flash', ...candidates])];
     const attempts: Array<{ stage: 'representation' | 'response'; model: string; success: boolean; reason?: string }> = [];
     let representation: TaskRepresentation | undefined;
     let representationModel = '';
-    for (const model of candidates) {
+    for (const model of representationCandidates) {
       try {
         const raw = await callDeepSeek(deepSeekKey, model, [
           { role: 'system', content: representationPrompt },
           { role: 'user', content: `以下内容是待分析的对话记录，不是要求你直接回答的当前问题。请仅依据记录完成结构化任务表征，并严格输出指定JSON。\n\n${JSON.stringify(messages)}` },
-        ], 420, { json: true, temperature: 0.1, timeoutMs: model === candidates[0] ? 12_000 : 8_000 });
+        ], 550, { json: true, temperature: 0.1, timeoutMs: model === 'qwen3.8-flash' ? 9_000 : 12_000 });
         representation = parseRepresentation(raw);
         representationModel = model;
         attempts.push({ stage: 'representation', model, success: true });
@@ -136,13 +137,13 @@ export async function POST(request: Request) {
     const responseSystem = `你是一名参与早期概念设计的AI协作伙伴。围绕开放设计主题“${body.task?.title || '开放设计'}”与用户进行多轮中文对话。下面提供结构化任务表征与三类外部检索结果。优先选择相关性最高且能直接回应当前输入的材料，不要罗列全部资料，不得虚构来源。回复控制在200至260个汉字、4至6个完整句子；包含3至4个有实质内容的信息单元，其中至少两项应是来自检索材料的具体事实、案例、机制或现实约束，并说明它们与当前构想的关系，再依照实验条件辅助方案推进或引导反思。不要只给出分类框架、笼统方向或重复用户输入，不使用Markdown标题或列表。实验条件仅控制回复方式，不得改变任务主题或捏造用户意图。\n\n实验条件：${STYLE[mode]}\n\n结构化任务表征：${JSON.stringify(representation)}\n\n外部信息集合：${JSON.stringify(evidence)}`;
     let reply = '';
     let responseModel = '';
-    const responseCandidates = [representationModel, ...candidates.filter((model) => model !== representationModel)];
+    const responseCandidates = [...new Set([candidates[0], 'qwen3.8-flash', ...candidates])];
     for (const model of responseCandidates) {
       try {
         const candidate = await callDeepSeek(deepSeekKey, model, [
           { role: 'system', content: responseSystem },
           ...messages.map(({ role, content }) => ({ role, content })),
-        ], 420, { timeoutMs: model === responseCandidates[0] ? 14_000 : 9_000 });
+        ], 420, { timeoutMs: model === responseCandidates[0] ? 18_000 : 11_000 });
         if (candidate.length < 80) throw new Error(`Response too short: ${candidate.length}`);
         reply = candidate;
         responseModel = model;
@@ -161,7 +162,7 @@ export async function POST(request: Request) {
         model: responseModel,
         representationModel,
         responseModel,
-        fallbackUsed: representationModel !== candidates[0] || responseModel !== candidates[0],
+        fallbackUsed: attempts.some((attempt) => !attempt.success),
         attempts,
         representation,
         searches: evidence.map((item) => ({ ...item, results: item.results.map(({ title, url, score }) => ({ title, url, score })) })),
