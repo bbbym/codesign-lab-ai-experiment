@@ -171,11 +171,35 @@ export default function Home() {
     localStorage.removeItem(`design-lab:${sessionKey}`);
   }
 
-  function exportSession() {
-    const data = { participantId, sequence: sequenceIndex + 1, taskOrder: taskIndex + 1, task, condition: mode, conditionLabel: MODES[mode].label, durationSeconds: 900 - remaining, completed, evaluation: evaluations[sessionKey] || null, exportedAt: new Date().toISOString(), messages };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  async function exportSession() {
+    const { default: writeXlsxFile } = await import('write-excel-file/browser');
+    const evaluation = evaluations[sessionKey];
+    const header = (value: string) => ({ value, fontWeight: 'bold' as const, color: '#FFFFFF', backgroundColor: '#2447E7', align: 'center' as const, wrap: true });
+    const label = (value: string) => ({ value, fontWeight: 'bold' as const, backgroundColor: '#EDF1FF' });
+    const summary = [
+      [header('字段'), header('内容')],
+      [label('参与者编号'), { value: participantId }], [label('实验序列'), { value: sequenceIndex + 1 }],
+      [label('任务顺序'), { value: taskIndex + 1 }], [label('任务编号'), { value: task.id }],
+      [label('设计主题'), { value: task.title }], [label('AI编号'), { value: MODES[mode].short }],
+      [label('内部条件代码'), { value: mode }], [label('任务用时（秒）'), { value: 900 - remaining, type: Number }],
+      [label('用户对话轮次'), { value: messages.filter((message) => message.role === 'user').length, type: Number }],
+      [label('任务状态'), { value: completed ? '已完成' : '未完成' }], [label('导出时间'), { value: new Date() }],
+    ];
+    const scores = [[header('题号'), header('维度'), header('题项'), header('评分')], ...EVALUATION_ITEMS.map((item, index) => [
+      { value: index + 1, type: Number }, { value: item.dimension }, { value: item.text, wrap: true }, { value: evaluation?.ratings[index + 1] ?? '', type: evaluation ? Number : String },
+    ])];
+    const conversation = [[header('序号'), header('角色'), header('时间'), header('对话内容'), header('技术追踪')], ...messages.map((message, index) => [
+      { value: index + 1, type: Number }, { value: message.role === 'user' ? '参与者' : 'AI' }, { value: new Date(message.at) },
+      { value: message.content, wrap: true }, { value: message.trace ? JSON.stringify(message.trace) : '', wrap: true },
+    ])];
+    const workbook = writeXlsxFile([
+      { data: summary, sheet: '实验信息', columns: [{ width: 20 }, { width: 48 }], stickyRowsCount: 1 },
+      { data: scores, sheet: '量表评分', columns: [{ width: 9 }, { width: 18 }, { width: 62 }, { width: 10 }], stickyRowsCount: 1 },
+      { data: conversation, sheet: '对话记录', columns: [{ width: 9 }, { width: 12 }, { width: 22 }, { width: 70 }, { width: 70 }], stickyRowsCount: 1, orientation: 'landscape' },
+    ], { fontFamily: 'Arial', fontSize: 11 });
+    const blob = await workbook.toBlob();
     const url = URL.createObjectURL(blob); const link = document.createElement('a');
-    link.href = url; link.download = `${participantId}_task-${task.id}_${mode}.json`; link.click(); URL.revokeObjectURL(url);
+    link.href = url; link.download = `${participantId}_任务${task.id}_${MODES[mode].short}.xlsx`; link.click(); URL.revokeObjectURL(url);
   }
 
   return (
@@ -208,7 +232,7 @@ export default function Home() {
           <div className="eyebrow">SESSION</div><h2>本次实验</h2><dl><div><dt>实验序列</dt><dd>{sequenceIndex + 1} / 4</dd></div><div><dt>任务</dt><dd>{taskIndex + 1} / {TASKS.length}</dd></div><div><dt>对话轮次</dt><dd>{messages.filter((m) => m.role === 'user').length}</dd></div><div><dt>当前状态</dt><dd>{completed ? '已完成' : running ? '进行中' : '未开始'}</dd></div></dl>
           <div className="protocol-note"><Sparkles size={17} /><p>请自然地与AI讨论。你可以采纳、质疑、修改或拒绝它的建议。</p></div>
           <Button className="complete-btn" disabled={messages.filter((m) => m.role === 'user').length === 0} onClick={() => { if (completed && taskIndex < TASKS.length - 1) { setTaskIndex((index) => index + 1); } else if (!completed) { setRunning(false); setEvaluationOpen(true); } }}><Check />{completed && taskIndex < TASKS.length - 1 ? '进入下一任务' : completed ? '本任务已完成' : '完成当前任务'}</Button>
-          <Button variant="outline" className="export-btn" onClick={exportSession}><Download />导出本次记录</Button>
+          <Button variant="outline" className="export-btn" onClick={exportSession}><Download />导出Excel记录</Button>
         </aside>
       </div>
 
