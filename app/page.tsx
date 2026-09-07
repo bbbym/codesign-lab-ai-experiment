@@ -62,6 +62,7 @@ export default function Home() {
   const [remaining, setRemaining] = useState(15 * 60);
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [researcherOpen, setResearcherOpen] = useState(false);
   const [evaluationOpen, setEvaluationOpen] = useState(false);
   const [ratings, setRatings] = useState<Record<number, number>>({});
@@ -83,7 +84,7 @@ export default function Home() {
 
   useEffect(() => {
     setMessages([]);
-    setRemaining(15 * 60); setRunning(false); setCompleted(false); setEvaluationOpen(false); setRatings({});
+    setRemaining(15 * 60); setRunning(false); setCompleted(false); setEvaluationOpen(false); setRatings({}); setRequestError(null);
   }, [taskIndex, mode]);
 
   useEffect(() => {
@@ -133,6 +134,26 @@ export default function Home() {
 
   const progress = useMemo(() => Math.round(((900 - remaining) / 900) * 100), [remaining]);
 
+  async function requestReply(history: Message[]) {
+    setLoading(true); setRequestError(null);
+    try {
+      let lastReason = 'AI服务暂时不可用';
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, task, messages: history }) });
+          const data = (await response.json()) as { reply?: string; error?: string; trace?: unknown };
+          if (!response.ok || !data.reply) throw new Error(data.error || '请求失败');
+          setMessages((current) => [...current, { role: 'assistant', content: data.reply!, at: new Date().toISOString(), trace: data.trace }]);
+          return;
+        } catch (error) {
+          lastReason = error instanceof Error ? error.message : 'AI服务暂时不可用';
+          if (attempt === 0) await new Promise((resolve) => window.setTimeout(resolve, 800));
+        }
+      }
+      setRequestError(`${lastReason}。可重新尝试，原输入不会重复记录。`);
+    } finally { setLoading(false); }
+  }
+
   async function sendMessage(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = input.trim();
@@ -140,21 +161,13 @@ export default function Home() {
     if (!running) setRunning(true);
     const userMessage: Message = { role: 'user', content, at: new Date().toISOString() };
     const next = [...messages, userMessage];
-    setMessages(next); setInput(''); setLoading(true);
-    try {
-      const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, task, messages: next }) });
-      const data = (await response.json()) as { reply?: string; error?: string; trace?: unknown };
-      if (!response.ok || !data.reply) throw new Error(data.error || '请求失败');
-      setMessages((current) => [...current, { role: 'assistant', content: data.reply!, at: new Date().toISOString(), trace: data.trace }]);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : '当前无法连接AI服务';
-      setMessages((current) => [...current, { role: 'assistant', content: `${reason}。你的输入已经保留，请稍后重试或联系研究人员。`, at: new Date().toISOString() }]);
-    } finally { setLoading(false); }
+    setMessages(next); setInput('');
+    await requestReply(next);
   }
 
   function resetSession() {
     setMessages([]);
-    setRemaining(900); setRunning(false); setCompleted(false);
+    setRemaining(900); setRunning(false); setCompleted(false); setRequestError(null);
     localStorage.removeItem(`design-lab:${sessionKey}`);
   }
 
@@ -185,7 +198,8 @@ export default function Home() {
             {loading && <article className="message assistant"><span className="message-avatar"><Bot size={18} /></span><div><span className="message-name">AI</span><div className="typing"><i /><i /><i /></div></div></article>}<div ref={endRef} />
           </div>
           <form className="composer" onSubmit={sendMessage}>
-            <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} placeholder={completed ? '本任务已完成' : '描述你的想法、问题或判断…'} disabled={completed || loading} aria-label="发送给AI的消息" />
+            {requestError && <div className="request-error"><span>{requestError}</span><Button type="button" size="sm" onClick={() => requestReply(messages)}>重新尝试</Button><button type="button" onClick={() => setRequestError(null)}>继续输入</button></div>}
+            <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} placeholder={completed ? '本任务已完成' : requestError ? '请先重试，或选择继续输入…' : '描述你的想法、问题或判断…'} disabled={completed || loading || Boolean(requestError)} aria-label="发送给AI的消息" />
             <Button type="submit" size="icon-lg" disabled={!input.trim() || loading || completed} aria-label="发送"><ArrowUp /></Button><span className="composer-hint">Enter发送 · Shift + Enter换行</span>
           </form>
         </section>
