@@ -55,7 +55,22 @@ async function callDeepSeek(
 
 function modelCandidates() {
   const primary = process.env.DEEPSEEK_MODEL || 'minimax-m3';
-  return [...new Set([primary, 'glm-5.3-flash', 'qwen3.8-flash'])];
+  return [...new Set([primary, 'glm-5.3-flash'])];
+}
+
+function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRepresentation {
+  const latest = [...messages].reverse().find((message) => message.role === 'user')?.content.trim() || taskTitle;
+  const focus = latest.slice(0, 120);
+  return {
+    design_goal: focus,
+    user_needs: [], use_context: [], constraints: [],
+    unresolved_questions: ['目标用户、具体使用情境与关键限制仍需结合后续对话确认'],
+    search_topics: {
+      user_context: `${taskTitle} ${focus} 用户需求 使用情境 研究`,
+      precedents: `${taskTitle} ${focus} 相关产品 服务 设计案例`,
+      implementation: `${taskTitle} ${focus} 实施条件 技术 成本 隐私`,
+    },
+  };
 }
 
 function parseRepresentation(raw: string): TaskRepresentation {
@@ -101,11 +116,10 @@ export async function POST(request: Request) {
 
     const representationPrompt = `你负责将一段早期设计对话整合为结构化任务表征，并规划三类外部检索。当前开放设计主题为“${body.task?.title || '开放设计'}”。不得替用户确定尚未表达的目标、用户群或方案；缺失信息应放入unresolved_questions。只返回合法JSON，不要添加解释或Markdown。JSON结构必须为：{"design_goal":"","user_needs":[],"use_context":[],"constraints":[],"unresolved_questions":[],"search_topics":{"user_context":"","precedents":"","implementation":""}}。三条search_topics分别检索：用户需求与使用情境、相关案例与现有方案、实施条件与发展环境；应结合当前对话动态生成，彼此不重复，表述为适合网页搜索的简洁查询。`;
     const candidates = modelCandidates();
-    const representationCandidates = candidates;
     const attempts: Array<{ stage: 'representation' | 'response'; model: string; success: boolean; reason?: string }> = [];
     let representation: TaskRepresentation | undefined;
     let representationModel = '';
-    for (const model of representationCandidates) {
+    for (const model of [candidates[0]]) {
       try {
         const raw = await callDeepSeek(deepSeekKey, model, [
           { role: 'system', content: representationPrompt },
@@ -119,7 +133,10 @@ export async function POST(request: Request) {
         attempts.push({ stage: 'representation', model, success: false, reason: error instanceof Error ? error.message : 'unknown' });
       }
     }
-    if (!representation) throw new Error('All representation models failed');
+    if (!representation) {
+      representation = localRepresentation(body.task?.title || '开放设计', messages);
+      representationModel = 'local-fallback';
+    }
 
     const categories: SearchCategory[] = ['user_context', 'precedents', 'implementation'];
     const searches = await Promise.all(categories.map(async (category) => {
