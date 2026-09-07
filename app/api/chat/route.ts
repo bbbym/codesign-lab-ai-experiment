@@ -58,7 +58,7 @@ async function callDeepSeek(
 }
 
 function modelCandidates() {
-  return ['qwen3.8-flash', 'glm-5.3-flash'];
+  return ['qwen3.8-flash'];
 }
 
 function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRepresentation {
@@ -74,6 +74,17 @@ function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRe
       implementation: `${taskTitle} ${focus} 实施条件 技术 成本 隐私`,
     },
   };
+}
+
+function localEvidenceReply(mode: Mode, representation: TaskRepresentation, evidence: Array<{ results: SearchResult[] }>) {
+  const facts = evidence.flatMap((item) => item.results).map((item) => item.content.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const first = (facts[0] || '现有研究提示，具体用户、使用情境与现实限制需要同时核对').slice(0, 68);
+  const second = (facts[10] || facts[1] || '相关案例的适用条件和实施成本也需要结合目标场景判断').slice(0, 68);
+  const issue = representation.design_goal.slice(0, 55);
+  if (mode === 'SA') return `你的构想已经形成了可继续发展的切入点。相关资料显示，${first}；另有案例指出，${second}。可以先围绕“${issue}”明确目标用户和高频情境，再把两项证据转化为功能要求，并用一个典型使用流程检查可行性。具体优先级可以由你结合任务目标决定。`;
+  if (mode === 'SR') return `你已经提出了一个值得继续检视的方向。相关资料显示，${first}；同时，${second}。这些信息提示我们需要进一步思考：当前构想主要回应的是谁在什么情境下的核心困难？如果便利性、实施条件和用户自主性发生冲突，你会依据什么标准作出取舍？`;
+  if (mode === 'CA') return `当前构想还不足以直接进入方案细化。资料显示，${first}；另有案例指出，${second}。不要停留在“${issue}”这一宽泛表述，先锁定目标用户与高频情境，把上述证据转化为明确的功能要求，再绘制一条关键使用流程并检查实施条件。`;
+  return `当前构想中的关键依据还没有被检验。资料显示，${first}；同时，${second}。先回答两个问题：你所说的“${issue}”究竟发生在谁的哪种具体情境中？当用户自主性、使用便利与实施成本无法同时满足时，你依据什么标准决定优先级？`;
 }
 
 async function searchTavily(apiKey: string, category: SearchCategory, query: string) {
@@ -127,7 +138,7 @@ export async function POST(request: Request) {
         const candidate = await callDeepSeek(deepSeekKey, model, [
           { role: 'system', content: responseSystem },
           ...messages.map(({ role, content }) => ({ role, content })),
-        ], 420, { timeoutMs: model === responseCandidates[0] ? 12_000 : model === 'glm-5.3-flash' ? 12_000 : 15_000 });
+        ], 420, { timeoutMs: 9_000 });
         reply = candidate;
         responseModel = model;
         attempts.push({ stage: 'response', model, success: true });
@@ -136,7 +147,10 @@ export async function POST(request: Request) {
         attempts.push({ stage: 'response', model, success: false, reason: error instanceof Error ? error.message : 'unknown' });
       }
     }
-    if (!reply) throw new Error('All response models failed');
+    if (!reply) {
+      reply = localEvidenceReply(mode, representation, evidence);
+      responseModel = 'local-evidence-fallback';
+    }
 
     return Response.json({
       reply,
