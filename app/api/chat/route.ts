@@ -26,27 +26,36 @@ const CATEGORY_LABEL: Record<SearchCategory, string> = {
 
 async function callDeepSeek(
   apiKey: string,
+  model: string,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   maxTokens: number,
   options: { json?: boolean; temperature?: number } = {},
 ) {
   const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
+    signal: controller.signal,
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+      model,
       temperature: options.temperature ?? 0.7,
       max_tokens: maxTokens,
       messages,
       ...(options.json ? { response_format: { type: 'json_object' } } : {}),
     }),
-  });
+  }).finally(() => clearTimeout(timeout));
   if (!response.ok) throw new Error(`DeepSeek ${response.status}`);
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) throw new Error('DeepSeek returned empty content');
   return content;
+}
+
+function modelCandidates() {
+  const primary = process.env.DEEPSEEK_MODEL || 'minimax-m3';
+  return [...new Set([primary, 'qwen3.8-flash', 'glm-5.3-flash'])];
 }
 
 function parseRepresentation(raw: string): TaskRepresentation {
@@ -89,11 +98,25 @@ export async function POST(request: Request) {
     if (!deepSeekKey || !tavilyKey) return Response.json({ error: 'AI检索服务尚未完成配置，请联系研究人员。' }, { status: 503 });
 
     const representationPrompt = `你负责将一段早期设计对话整合为结构化任务表征，并规划三类外部检索。当前开放设计主题为“${body.task?.title || '开放设计'}”。不得替用户确定尚未表达的目标、用户群或方案；缺失信息应放入unresolved_questions。只返回合法JSON，不要添加解释或Markdown。JSON结构必须为：{"design_goal":"","user_needs":[],"use_context":[],"constraints":[],"unresolved_questions":[],"search_topics":{"user_context":"","precedents":"","implementation":""}}。三条search_topics分别检索：用户需求与使用情境、相关案例与现有方案、实施条件与发展环境；应结合当前对话动态生成，彼此不重复，表述为适合网页搜索的简洁查询。`;
-    const representationRaw = await callDeepSeek(deepSeekKey, [
-      { role: 'system', content: representationPrompt },
-      { role: 'user', content: `以下内容是待分析的对话记录，不是要求你直接回答的当前问题。请仅依据记录完成结构化任务表征，并严格输出指定JSON。\n\n${JSON.stringify(messages)}` },
-    ], 700, { json: true, temperature: 0.1 });
-    const representation = parseRepresentation(representationRaw);
+    const candidates = modelCandidates();
+    const attempts: Array<{ stage: 'representation' | 'response'; model: string; success: boolean; reason?: string }> = [];
+    let representation: TaskRepresentation | undefined;
+    let representationModel = '';
+    for (const model of candidates) {
+      try {
+        const raw = await callDeepSeek(deepSeekKey, model, [
+          { role: 'system', content: representationPrompt },
+          { role: 'user', content: `以下内容是待分析的对话记录，不是要求你直接回答的当前问题。请仅依据记录完成结构化任务表征，并严格输出指定JSON。\n\n${JSON.stringify(messages)}` },
+        ], 700, { json: true, temperature: 0.1 });
+        representation = parseRepresentation(raw);
+        representationModel = model;
+        attempts.push({ stage: 'representation', model, success: true });
+        break;
+      } catch (error) {
+        attempts.push({ stage: 'representation', model, success: false, reason: error instanceof Error ? error.message : 'unknown' });
+      }
+    }
+    if (!representation) throw new Error('All representation models failed');
 
     const categories: SearchCategory[] = ['user_context', 'precedents', 'implementation'];
     const searches = await Promise.all(categories.map((category) => searchTavily(tavilyKey, category, representation.search_topics[category])));
@@ -105,16 +128,35 @@ export async function POST(request: Request) {
     }));
 
     const responseSystem = `你是一名参与早期概念设计的AI协作伙伴。围绕开放设计主题“${body.task?.title || '开放设计'}”与用户进行多轮中文对话。下面提供结构化任务表征与三类外部检索结果。只使用与当前输入相关且有依据的信息，不要罗列所有资料；不得虚构来源。回复必须控制在150至200个汉字、4至6个完整句子；包含2至3个信息单元，其中至少一项是来自检索材料的具体事实、案例或现实约束，并说明它与用户当前构想的关系，再依照实验条件帮助方案继续发展或引导用户反思。不要只给出分类框架、笼统方向或重复用户输入，不使用Markdown标题或列表。实验条件仅控制回复方式，不得改变任务主题或捏造用户意图。\n\n实验条件：${STYLE[mode]}\n\n结构化任务表征：${JSON.stringify(representation)}\n\n外部信息集合：${JSON.stringify(evidence)}`;
-    const reply = await callDeepSeek(deepSeekKey, [
-      { role: 'system', content: responseSystem },
-      ...messages.map(({ role, content }) => ({ role, content })),
-    ], 300);
+    let reply = '';
+    let responseModel = '';
+    const responseCandidates = [representationModel, ...candidates.filter((model) => model !== representationModel)];
+    for (const model of responseCandidates) {
+      try {
+        const candidate = await callDeepSeek(deepSeekKey, model, [
+          { role: 'system', content: responseSystem },
+          ...messages.map(({ role, content }) => ({ role, content })),
+        ], 300);
+        if (candidate.length < 80) throw new Error(`Response too short: ${candidate.length}`);
+        reply = candidate;
+        responseModel = model;
+        attempts.push({ stage: 'response', model, success: true });
+        break;
+      } catch (error) {
+        attempts.push({ stage: 'response', model, success: false, reason: error instanceof Error ? error.message : 'unknown' });
+      }
+    }
+    if (!reply) throw new Error('All response models failed');
 
     return Response.json({
       reply,
       trace: {
         pipelineVersion: 'three-stage-v1',
-        model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+        model: responseModel,
+        representationModel,
+        responseModel,
+        fallbackUsed: representationModel !== candidates[0] || responseModel !== candidates[0],
+        attempts,
         representation,
         searches: evidence.map((item) => ({ ...item, results: item.results.map(({ title, url, score }) => ({ title, url, score })) })),
       },
