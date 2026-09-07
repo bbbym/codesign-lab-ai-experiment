@@ -73,25 +73,6 @@ function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRe
   };
 }
 
-function parseRepresentation(raw: string): TaskRepresentation {
-  const candidate = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  const value = JSON.parse(candidate) as Partial<TaskRepresentation>;
-  const topics = value.search_topics || ({} as Record<SearchCategory, string>);
-  if (!value.design_goal || !topics.user_context || !topics.precedents || !topics.implementation) throw new Error('Invalid task representation');
-  return {
-    design_goal: String(value.design_goal),
-    user_needs: Array.isArray(value.user_needs) ? value.user_needs.map(String) : [],
-    use_context: Array.isArray(value.use_context) ? value.use_context.map(String) : [],
-    constraints: Array.isArray(value.constraints) ? value.constraints.map(String) : [],
-    unresolved_questions: Array.isArray(value.unresolved_questions) ? value.unresolved_questions.map(String) : [],
-    search_topics: {
-      user_context: String(topics.user_context),
-      precedents: String(topics.precedents),
-      implementation: String(topics.implementation),
-    },
-  };
-}
-
 async function searchTavily(apiKey: string, category: SearchCategory, query: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 7_000);
@@ -114,29 +95,11 @@ export async function POST(request: Request) {
     const tavilyKey = process.env.TAVILY_API_KEY;
     if (!deepSeekKey || !tavilyKey) return Response.json({ error: 'AI检索服务尚未完成配置，请联系研究人员。' }, { status: 503 });
 
-    const representationPrompt = `你负责将一段早期设计对话整合为结构化任务表征，并规划三类外部检索。当前开放设计主题为“${body.task?.title || '开放设计'}”。不得替用户确定尚未表达的目标、用户群或方案；缺失信息应放入unresolved_questions。只返回合法JSON，不要添加解释或Markdown。JSON结构必须为：{"design_goal":"","user_needs":[],"use_context":[],"constraints":[],"unresolved_questions":[],"search_topics":{"user_context":"","precedents":"","implementation":""}}。三条search_topics分别检索：用户需求与使用情境、相关案例与现有方案、实施条件与发展环境；应结合当前对话动态生成，彼此不重复，表述为适合网页搜索的简洁查询。`;
     const candidates = modelCandidates();
     const attempts: Array<{ stage: 'representation' | 'response'; model: string; success: boolean; reason?: string }> = [];
-    let representation: TaskRepresentation | undefined;
-    let representationModel = '';
-    for (const model of [candidates[0]]) {
-      try {
-        const raw = await callDeepSeek(deepSeekKey, model, [
-          { role: 'system', content: representationPrompt },
-          { role: 'user', content: `以下内容是待分析的对话记录，不是要求你直接回答的当前问题。请仅依据记录完成结构化任务表征，并严格输出指定JSON。\n\n${JSON.stringify(messages)}` },
-        ], 550, { json: true, temperature: 0.1, timeoutMs: model === candidates[0] ? 10_000 : model === 'glm-5.3-flash' ? 12_000 : 15_000 });
-        representation = parseRepresentation(raw);
-        representationModel = model;
-        attempts.push({ stage: 'representation', model, success: true });
-        break;
-      } catch (error) {
-        attempts.push({ stage: 'representation', model, success: false, reason: error instanceof Error ? error.message : 'unknown' });
-      }
-    }
-    if (!representation) {
-      representation = localRepresentation(body.task?.title || '开放设计', messages);
-      representationModel = 'local-fallback';
-    }
+    const representation = localRepresentation(body.task?.title || '开放设计', messages);
+    const representationModel = 'local-structured-processing';
+    attempts.push({ stage: 'representation', model: representationModel, success: true });
 
     const categories: SearchCategory[] = ['user_context', 'precedents', 'implementation'];
     const searches = await Promise.all(categories.map(async (category) => {
@@ -175,7 +138,7 @@ export async function POST(request: Request) {
     return Response.json({
       reply,
       trace: {
-        pipelineVersion: 'three-stage-v2-fast-top10',
+        pipelineVersion: 'three-stage-v3-single-llm-top10',
         model: responseModel,
         representationModel,
         responseModel,
