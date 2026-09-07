@@ -29,11 +29,11 @@ async function callDeepSeek(
   model: string,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   maxTokens: number,
-  options: { json?: boolean; temperature?: number } = {},
+  options: { json?: boolean; temperature?: number; timeoutMs?: number } = {},
 ) {
   const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25_000);
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 12_000);
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     signal: controller.signal,
@@ -78,14 +78,16 @@ function parseRepresentation(raw: string): TaskRepresentation {
 }
 
 async function searchTavily(apiKey: string, category: SearchCategory, query: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7_000);
   const response = await fetch('https://api.tavily.com/search', {
-    method: 'POST',
+    method: 'POST', signal: controller.signal,
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, topic: 'general', search_depth: 'basic', max_results: 5, include_answer: false, include_raw_content: false, include_images: false }),
-  });
+    body: JSON.stringify({ query, topic: 'general', search_depth: 'basic', max_results: 10, include_answer: false, include_raw_content: false, include_images: false }),
+  }).finally(() => clearTimeout(timeout));
   if (!response.ok) throw new Error(`Tavily ${response.status}`);
   const data = (await response.json()) as { results?: SearchResult[] };
-  return { category, label: CATEGORY_LABEL[category], query, results: (data.results || []).slice(0, 5) };
+  return { category, label: CATEGORY_LABEL[category], query, results: (data.results || []).slice(0, 10) };
 }
 
 export async function POST(request: Request) {
@@ -107,7 +109,7 @@ export async function POST(request: Request) {
         const raw = await callDeepSeek(deepSeekKey, model, [
           { role: 'system', content: representationPrompt },
           { role: 'user', content: `以下内容是待分析的对话记录，不是要求你直接回答的当前问题。请仅依据记录完成结构化任务表征，并严格输出指定JSON。\n\n${JSON.stringify(messages)}` },
-        ], 700, { json: true, temperature: 0.1 });
+        ], 420, { json: true, temperature: 0.1, timeoutMs: model === candidates[0] ? 12_000 : 8_000 });
         representation = parseRepresentation(raw);
         representationModel = model;
         attempts.push({ stage: 'representation', model, success: true });
@@ -119,15 +121,19 @@ export async function POST(request: Request) {
     if (!representation) throw new Error('All representation models failed');
 
     const categories: SearchCategory[] = ['user_context', 'precedents', 'implementation'];
-    const searches = await Promise.all(categories.map((category) => searchTavily(tavilyKey, category, representation.search_topics[category])));
+    const searches = await Promise.all(categories.map(async (category) => {
+      try { return await searchTavily(tavilyKey, category, representation.search_topics[category]); }
+      catch (error) { return { category, label: CATEGORY_LABEL[category], query: representation.search_topics[category], results: [], error: error instanceof Error ? error.message : 'search failed' }; }
+    }));
     const evidence = searches.map((search) => ({
       category: search.category,
       label: search.label,
       query: search.query,
-      results: search.results.map(({ title, url, content, score }) => ({ title, url, content: content.slice(0, 900), score })),
+      ...('error' in search ? { error: search.error } : {}),
+      results: search.results.map(({ title, url, content, score }) => ({ title, url, content: content.slice(0, 320), score })),
     }));
 
-    const responseSystem = `你是一名参与早期概念设计的AI协作伙伴。围绕开放设计主题“${body.task?.title || '开放设计'}”与用户进行多轮中文对话。下面提供结构化任务表征与三类外部检索结果。只使用与当前输入相关且有依据的信息，不要罗列所有资料；不得虚构来源。回复必须控制在150至200个汉字、4至6个完整句子；包含2至3个信息单元，其中至少一项是来自检索材料的具体事实、案例或现实约束，并说明它与用户当前构想的关系，再依照实验条件帮助方案继续发展或引导用户反思。不要只给出分类框架、笼统方向或重复用户输入，不使用Markdown标题或列表。实验条件仅控制回复方式，不得改变任务主题或捏造用户意图。\n\n实验条件：${STYLE[mode]}\n\n结构化任务表征：${JSON.stringify(representation)}\n\n外部信息集合：${JSON.stringify(evidence)}`;
+    const responseSystem = `你是一名参与早期概念设计的AI协作伙伴。围绕开放设计主题“${body.task?.title || '开放设计'}”与用户进行多轮中文对话。下面提供结构化任务表征与三类外部检索结果。优先选择相关性最高且能直接回应当前输入的材料，不要罗列全部资料，不得虚构来源。回复控制在200至260个汉字、4至6个完整句子；包含3至4个有实质内容的信息单元，其中至少两项应是来自检索材料的具体事实、案例、机制或现实约束，并说明它们与当前构想的关系，再依照实验条件辅助方案推进或引导反思。不要只给出分类框架、笼统方向或重复用户输入，不使用Markdown标题或列表。实验条件仅控制回复方式，不得改变任务主题或捏造用户意图。\n\n实验条件：${STYLE[mode]}\n\n结构化任务表征：${JSON.stringify(representation)}\n\n外部信息集合：${JSON.stringify(evidence)}`;
     let reply = '';
     let responseModel = '';
     const responseCandidates = [representationModel, ...candidates.filter((model) => model !== representationModel)];
@@ -136,7 +142,7 @@ export async function POST(request: Request) {
         const candidate = await callDeepSeek(deepSeekKey, model, [
           { role: 'system', content: responseSystem },
           ...messages.map(({ role, content }) => ({ role, content })),
-        ], 300);
+        ], 420, { timeoutMs: model === responseCandidates[0] ? 14_000 : 9_000 });
         if (candidate.length < 80) throw new Error(`Response too short: ${candidate.length}`);
         reply = candidate;
         responseModel = model;
@@ -151,7 +157,7 @@ export async function POST(request: Request) {
     return Response.json({
       reply,
       trace: {
-        pipelineVersion: 'three-stage-v1',
+        pipelineVersion: 'three-stage-v2-fast-top10',
         model: responseModel,
         representationModel,
         responseModel,
