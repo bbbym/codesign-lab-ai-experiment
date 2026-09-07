@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, Bot, Check, Clock3, Download, FlaskConical, RotateCcw, Settings2, Sparkles, UserRound } from 'lucide-react';
+import { ArrowUp, Bot, Check, Clock3, Download, RotateCcw, Settings2, Sparkles, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -152,7 +152,6 @@ export default function Home() {
   return (
     <main className="lab-shell">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark"><FlaskConical size={19} /></span><div><strong>CoDesign Lab</strong><span>AI协同设计实验</span></div></div>
         <div className="session-meta"><span>{participantId}</span><span className="status-dot" /><span>本地记录中</span><Button variant="ghost" size="icon" aria-label="研究者设置" onClick={() => setResearcherOpen(true)}><Settings2 /></Button></div>
       </header>
 
