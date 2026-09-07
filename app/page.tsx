@@ -24,10 +24,10 @@ const MODES: Record<Mode, { label: string; short: string }> = {
 };
 
 const TASKS = [
-  { id: '01', domain: '健康福祉', title: '轻量健康支持服务', brief: '请为长期疲劳的青年职场人设计一项轻量健康支持服务。方案应帮助用户识别疲劳情境并获得适当支持，同时避免医疗诊断、强制监测和不必要的数据收集。', deliverable: '形成一份简要构想：核心问题、目标用户、主要功能或服务流程，以及尚待解决的一项限制。' },
-  { id: '02', domain: '学习教育', title: '课外项目学习支持', brief: '请为需要完成开放式课程项目的大学生设计一项学习支持服务。方案应帮助学生从资料收集转向实际行动，同时保留目标定义、方案选择和理由说明等必要的自主思考。', deliverable: '形成一份简要构想：学习障碍、支持机制、关键交互，以及系统不应替学生完成的认知工作。' },
-  { id: '03', domain: '社区文化', title: '社区文化参与服务', brief: '请设计一项促进年轻居民参与社区文化的数字服务，使居民不只观看或分享文化内容，也能参与解释、记录或实践，并尊重传承主体的知识与决定权。', deliverable: '形成一份简要构想：参与者角色、核心体验、内容治理方式，以及需要处理的文化或授权问题。' },
-  { id: '04', domain: '数字生活', title: '个人数字服务管理', brief: '请设计一项帮助用户理解和管理数字订阅、应用权限及个人数据关系的工具。系统应提高信息可见性，但不能替用户取消服务或撤回权限。', deliverable: '形成一份简要构想：信息结构、关键流程、AI的作用边界，以及用户如何保留最终控制权。' },
+  { id: '01', domain: '健康福祉', title: '未来健康与福祉' },
+  { id: '02', domain: '学习教育', title: '未来学习与教育' },
+  { id: '03', domain: '社区文化', title: '未来社区与文化' },
+  { id: '04', domain: '数字生活', title: '未来数字生活' },
 ];
 
 const OPENERS: Record<Mode, string> = {
@@ -157,8 +157,7 @@ export default function Home() {
 
       <div className="workspace">
         <aside className="task-panel">
-          <div className="eyebrow">TASK {task.id}</div><div className="domain-chip">{task.domain}</div><h1>{task.title}</h1><p>{task.brief}</p>
-          <div className="deliverable"><Check size={16} /><span><b>任务产出</b>{task.deliverable}</span></div>
+          <div className="eyebrow">TASK {task.id}</div><h1>{task.title}</h1>
           <div className="task-list" aria-label="任务进度">{TASKS.map((item, index) => <button key={item.id} className={index === taskIndex ? 'active' : ''} onClick={() => setTaskIndex(index)}><span>{item.id}</span><span>{item.domain}</span></button>)}</div>
         </aside>
 
