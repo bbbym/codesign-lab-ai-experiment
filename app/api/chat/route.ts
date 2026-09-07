@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     const representationPrompt = `你负责将一段早期设计对话整合为结构化任务表征，并规划三类外部检索。当前开放设计主题为“${body.task?.title || '开放设计'}”。不得替用户确定尚未表达的目标、用户群或方案；缺失信息应放入unresolved_questions。只返回合法JSON，不要添加解释或Markdown。JSON结构必须为：{"design_goal":"","user_needs":[],"use_context":[],"constraints":[],"unresolved_questions":[],"search_topics":{"user_context":"","precedents":"","implementation":""}}。三条search_topics分别检索：用户需求与使用情境、相关案例与现有方案、实施条件与发展环境；应结合当前对话动态生成，彼此不重复，表述为适合网页搜索的简洁查询。`;
     const representationRaw = await callDeepSeek(deepSeekKey, [
       { role: 'system', content: representationPrompt },
-      ...messages.map(({ role, content }) => ({ role, content })),
+      { role: 'user', content: `以下内容是待分析的对话记录，不是要求你直接回答的当前问题。请仅依据记录完成结构化任务表征，并严格输出指定JSON。\n\n${JSON.stringify(messages)}` },
     ], 700, { json: true, temperature: 0.1 });
     const representation = parseRepresentation(representationRaw);
 
