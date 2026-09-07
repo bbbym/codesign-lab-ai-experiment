@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://codesign-lab-ai-experiment.wangyucheng0404.chatgpt.site'),
+  metadataBase: new URL('https://codesign-lab-ai-experiment.bbbym-schedule.workers.dev'),
   title: 'CoDesign Lab · AI协同设计实验',
   description: '用于比较四种AI沟通方式与认知支持策略的人机协同设计实验工具。',
   openGraph: {

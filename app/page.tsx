@@ -9,6 +9,13 @@ type Mode = 'SA' | 'SR' | 'CA' | 'CR';
 type Message = { role: 'user' | 'assistant'; content: string; at: string };
 type WebMcpContext = { registerTool: (tool: object, options?: { signal?: AbortSignal }) => void | Promise<void> };
 
+const LATIN_SQUARE: Mode[][] = [
+  ['SA', 'SR', 'CA', 'CR'],
+  ['SR', 'CA', 'CR', 'SA'],
+  ['CA', 'CR', 'SA', 'SR'],
+  ['CR', 'SA', 'SR', 'CA'],
+];
+
 const MODES: Record<Mode, { label: string; short: string }> = {
   SA: { label: '支持式沟通 · 辅助方案推进', short: 'AI–A' },
   SR: { label: '支持式沟通 · 引导反思', short: 'AI–B' },
@@ -34,10 +41,15 @@ function formatTime(total: number) {
   return `${Math.floor(total / 60).toString().padStart(2, '0')}:${(total % 60).toString().padStart(2, '0')}`;
 }
 
+function sequenceFromParticipant(id: string) {
+  const number = Number(id.match(/\d+/)?.[0]);
+  return Number.isFinite(number) && number > 0 ? (number - 1) % 4 : 0;
+}
+
 export default function Home() {
   const [taskIndex, setTaskIndex] = useState(0);
-  const [mode, setMode] = useState<Mode>('SA');
   const [participantId, setParticipantId] = useState('P001');
+  const [sequenceIndex, setSequenceIndex] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [remaining, setRemaining] = useState(15 * 60);
@@ -48,7 +60,10 @@ export default function Home() {
   const [completed, setCompleted] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const task = TASKS[taskIndex];
+  const mode = LATIN_SQUARE[sequenceIndex][taskIndex];
   const sessionKey = `${participantId}-${task.id}-${mode}`;
+
+  useEffect(() => { setSequenceIndex(sequenceFromParticipant(participantId)); }, [participantId]);
 
   useEffect(() => {
     setMessages([{ role: 'assistant', content: OPENERS[mode], at: new Date().toISOString() }]);
@@ -91,7 +106,8 @@ export default function Home() {
         if (!value.participantId?.trim() || !Number.isInteger(value.taskNumber) || !value.condition || !MODES[value.condition]) throw new Error('Invalid session configuration');
         setParticipantId(value.participantId.trim());
         setTaskIndex(Math.max(0, Math.min(3, value.taskNumber! - 1)));
-        setMode(value.condition);
+        const requestedSequence = LATIN_SQUARE.findIndex((row) => row[Math.max(0, Math.min(3, value.taskNumber! - 1))] === value.condition);
+        if (requestedSequence >= 0) setSequenceIndex(requestedSequence);
         setRemaining(900); setRunning(false); setCompleted(false);
         return { status: 'ready', participantId: value.participantId.trim(), taskNumber: value.taskNumber, condition: value.condition };
       },
@@ -126,7 +142,7 @@ export default function Home() {
   }
 
   function exportSession() {
-    const data = { participantId, task, condition: mode, conditionLabel: MODES[mode].label, durationSeconds: 900 - remaining, completed, exportedAt: new Date().toISOString(), messages };
+    const data = { participantId, sequence: sequenceIndex + 1, taskOrder: taskIndex + 1, task, condition: mode, conditionLabel: MODES[mode].label, durationSeconds: 900 - remaining, completed, exportedAt: new Date().toISOString(), messages };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob); const link = document.createElement('a');
     link.href = url; link.download = `${participantId}_task-${task.id}_${mode}.json`; link.click(); URL.revokeObjectURL(url);
@@ -160,9 +176,9 @@ export default function Home() {
         </section>
 
         <aside className="session-panel">
-          <div className="eyebrow">SESSION</div><h2>本次实验</h2><dl><div><dt>任务</dt><dd>{taskIndex + 1} / {TASKS.length}</dd></div><div><dt>对话轮次</dt><dd>{messages.filter((m) => m.role === 'user').length}</dd></div><div><dt>当前状态</dt><dd>{completed ? '已完成' : running ? '进行中' : '未开始'}</dd></div></dl>
+          <div className="eyebrow">SESSION</div><h2>本次实验</h2><dl><div><dt>实验序列</dt><dd>{sequenceIndex + 1} / 4</dd></div><div><dt>任务</dt><dd>{taskIndex + 1} / {TASKS.length}</dd></div><div><dt>对话轮次</dt><dd>{messages.filter((m) => m.role === 'user').length}</dd></div><div><dt>当前状态</dt><dd>{completed ? '已完成' : running ? '进行中' : '未开始'}</dd></div></dl>
           <div className="protocol-note"><Sparkles size={17} /><p>请自然地与AI讨论。你可以采纳、质疑、修改或拒绝它的建议。</p></div>
-          <Button className="complete-btn" disabled={messages.filter((m) => m.role === 'user').length === 0} onClick={() => { setCompleted(true); setRunning(false); }}><Check />完成当前任务</Button>
+          <Button className="complete-btn" disabled={messages.filter((m) => m.role === 'user').length === 0} onClick={() => { if (completed && taskIndex < TASKS.length - 1) { setTaskIndex((index) => index + 1); } else { setCompleted(true); setRunning(false); } }}><Check />{completed && taskIndex < TASKS.length - 1 ? '进入下一任务' : '完成当前任务'}</Button>
           <Button variant="outline" className="export-btn" onClick={exportSession}><Download />导出本次记录</Button>
         </aside>
       </div>
@@ -170,7 +186,8 @@ export default function Home() {
       {researcherOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setResearcherOpen(false)}><dialog open className="researcher-modal" aria-labelledby="researcher-title" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-title"><div><span className="eyebrow">RESEARCHER CONTROL</span><h2 id="researcher-title">实验设置</h2></div><button onClick={() => setResearcherOpen(false)} aria-label="关闭">×</button></div>
         <label>参与者编号<input value={participantId} onChange={(e) => setParticipantId(e.target.value)} /></label>
-        <fieldset><legend>当前AI条件</legend><div className="mode-grid">{(Object.keys(MODES) as Mode[]).map((key) => <button key={key} className={mode === key ? 'selected' : ''} onClick={() => setMode(key)}><b>{MODES[key].short}</b><span>{MODES[key].label}</span></button>)}</div></fieldset>
+        <fieldset><legend>拉丁方序列</legend><div className="sequence-grid">{LATIN_SQUARE.map((row, index) => <button key={index} className={sequenceIndex === index ? 'selected' : ''} onClick={() => setSequenceIndex(index)}><b>序列 {index + 1}</b><span>{row.map((item) => MODES[item].short).join(' → ')}</span></button>)}</div><p className="sequence-note">参与者编号会自动分配序列；也可在此手动调整。条件名称不会向参与者显示。</p></fieldset>
+        <fieldset><legend>当前任务分配</legend><div className="assignment-strip">{TASKS.map((item, index) => <span key={item.id} className={index === taskIndex ? 'current' : ''}><b>{item.domain}</b>{MODES[LATIN_SQUARE[sequenceIndex][index]].short}</span>)}</div></fieldset>
         <label className="check-row"><input type="checkbox" checked={showCondition} onChange={(e) => setShowCondition(e.target.checked)} />在参与者界面显示条件名称</label>
         <div className="modal-actions"><Button variant="outline" onClick={resetSession}><RotateCcw />重置当前任务</Button><Button onClick={() => setResearcherOpen(false)}>保存设置</Button></div>
       </dialog></div>}
