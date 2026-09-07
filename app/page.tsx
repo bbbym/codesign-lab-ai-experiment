@@ -30,13 +30,6 @@ const TASKS = [
   { id: '04', domain: '数字生活', title: '数字生活', description: '数字生活设计关注数字技术如何影响人们的工作、消费、社交与日常决策。你可以从信息理解与自主控制、隐私安全、数字身份、智能服务、网络社交、数字包容、平台规则、AI应用以及技术便利与生活负担的平衡等方向展开，探索更清晰、可信、可控且包容的数字体验，也可以提出其他相关议题。' },
 ];
 
-const OPENERS: Record<Mode, string> = {
-  SA: '很高兴和你一起完成这项设计任务。请先描述你目前的想法或最想处理的问题，我会补充相关信息，并帮助你把构想发展得更具体。',
-  SR: '很高兴和你一起分析这项设计任务。请先描述你目前的想法或判断，我会和你一起检查其中的目标、假设与取舍，帮助你形成自己的判断。',
-  CA: '直接说明你目前的构想。不要只给出宽泛目标；我会指出缺失的信息，并给出能够继续发展方案的具体内容。',
-  CR: '直接说明你目前的构想及其依据。不要回避其中的假设和限制；我会要求你检查关键矛盾，再由你决定如何调整方案。',
-};
-
 function formatTime(total: number) {
   return `${Math.floor(total / 60).toString().padStart(2, '0')}:${(total % 60).toString().padStart(2, '0')}`;
 }
@@ -66,7 +59,7 @@ export default function Home() {
   useEffect(() => { setSequenceIndex(sequenceFromParticipant(participantId)); }, [participantId]);
 
   useEffect(() => {
-    setMessages([{ role: 'assistant', content: OPENERS[mode], at: new Date().toISOString() }]);
+    setMessages([]);
     setRemaining(15 * 60); setRunning(false); setCompleted(false);
   }, [taskIndex, mode]);
 
@@ -137,7 +130,7 @@ export default function Home() {
   }
 
   function resetSession() {
-    setMessages([{ role: 'assistant', content: OPENERS[mode], at: new Date().toISOString() }]);
+    setMessages([]);
     setRemaining(900); setRunning(false); setCompleted(false);
     localStorage.removeItem(`design-lab:${sessionKey}`);
   }
