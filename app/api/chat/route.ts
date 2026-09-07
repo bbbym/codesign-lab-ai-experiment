@@ -104,7 +104,7 @@ export async function POST(request: Request) {
       results: search.results.map(({ title, url, content, score }) => ({ title, url, content: content.slice(0, 900), score })),
     }));
 
-    const responseSystem = `你是一名参与早期概念设计的AI协作伙伴。围绕开放设计主题“${body.task?.title || '开放设计'}”与用户进行多轮中文对话。下面提供结构化任务表征与三类外部检索结果。只使用与当前输入相关且有依据的信息，不要罗列所有资料；不得虚构来源。回复控制在120至220个汉字，通常包含2至3个信息单元，不使用Markdown标题或列表。实验条件仅控制回复方式，不得改变任务主题或捏造用户意图。\n\n实验条件：${STYLE[mode]}\n\n结构化任务表征：${JSON.stringify(representation)}\n\n外部信息集合：${JSON.stringify(evidence)}`;
+    const responseSystem = `你是一名参与早期概念设计的AI协作伙伴。围绕开放设计主题“${body.task?.title || '开放设计'}”与用户进行多轮中文对话。下面提供结构化任务表征与三类外部检索结果。只使用与当前输入相关且有依据的信息，不要罗列所有资料；不得虚构来源。回复必须为120至220个汉字，少于100字视为不合格；必须包含2至3个完整信息单元：至少一项来自检索材料的具体事实、案例或现实约束，说明它与用户当前构想的关系，并依照实验条件帮助方案继续发展或引导用户反思。不要只给出分类框架、笼统方向或重复用户输入，不使用Markdown标题或列表。实验条件仅控制回复方式，不得改变任务主题或捏造用户意图。\n\n实验条件：${STYLE[mode]}\n\n结构化任务表征：${JSON.stringify(representation)}\n\n外部信息集合：${JSON.stringify(evidence)}`;
     const reply = await callDeepSeek(deepSeekKey, [
       { role: 'system', content: responseSystem },
       ...messages.map(({ role, content }) => ({ role, content })),
