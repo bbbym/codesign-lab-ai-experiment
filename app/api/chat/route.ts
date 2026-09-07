@@ -42,6 +42,7 @@ async function callDeepSeek(
       model,
       temperature: options.temperature ?? 0.7,
       max_tokens: maxTokens,
+      thinking: { type: 'disabled' },
       messages,
       ...(options.json ? { response_format: { type: 'json_object' } } : {}),
     }),
@@ -50,15 +51,14 @@ async function callDeepSeek(
     const detail = (await response.text()).slice(0, 300);
     throw new Error(`DeepSeek ${response.status}: ${detail}`);
   }
-  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string; reasoning_content?: string } }> };
-  const message = data.choices?.[0]?.message;
-  const content = (message?.content || message?.reasoning_content)?.trim();
+  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) throw new Error('DeepSeek returned empty content');
   return content;
 }
 
 function modelCandidates() {
-  return ['glm-5.3-flash', 'qwen3.8-flash'];
+  return ['qwen3.8-flash', 'glm-5.3-flash'];
 }
 
 function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRepresentation {
