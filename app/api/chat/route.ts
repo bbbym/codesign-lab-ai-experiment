@@ -24,16 +24,22 @@ const CATEGORY_LABEL: Record<SearchCategory, string> = {
   implementation: '实施条件与发展环境',
 };
 
-async function callDeepSeek(apiKey: string, messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>, maxTokens: number) {
+async function callDeepSeek(
+  apiKey: string,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  maxTokens: number,
+  options: { json?: boolean; temperature?: number } = {},
+) {
   const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
-      temperature: 0.7,
+      temperature: options.temperature ?? 0.7,
       max_tokens: maxTokens,
       messages,
+      ...(options.json ? { response_format: { type: 'json_object' } } : {}),
     }),
   });
   if (!response.ok) throw new Error(`DeepSeek ${response.status}`);
@@ -86,7 +92,7 @@ export async function POST(request: Request) {
     const representationRaw = await callDeepSeek(deepSeekKey, [
       { role: 'system', content: representationPrompt },
       ...messages.map(({ role, content }) => ({ role, content })),
-    ], 700);
+    ], 700, { json: true, temperature: 0.1 });
     const representation = parseRepresentation(representationRaw);
 
     const categories: SearchCategory[] = ['user_context', 'precedents', 'implementation'];
