@@ -25,12 +25,12 @@ const CATEGORY_LABEL: Record<SearchCategory, string> = {
 };
 
 async function callDeepSeek(apiKey: string, messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>, maxTokens: number) {
-  const response = await fetch('https://api.deepseek.com/chat/completions', {
+  const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
-      thinking: { type: 'disabled' },
       temperature: 0.7,
       max_tokens: maxTokens,
       messages,
