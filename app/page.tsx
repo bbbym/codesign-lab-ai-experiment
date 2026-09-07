@@ -24,10 +24,10 @@ const MODES: Record<Mode, { label: string; short: string }> = {
 };
 
 const TASKS = [
-  { id: '01', domain: '健康福祉', title: '健康与福祉', description: '关注不同人群在身体健康、心理状态、日常照护和社会支持等方面的真实需求。你可以从具体生活情境出发，识别现有体验中的困难，并探索产品、服务、空间或系统层面的改善机会。' },
-  { id: '02', domain: '学习教育', title: '学习与教育', description: '关注人们在知识获取、学习投入、能力发展和协作交流等过程中的需求与障碍。你可以选择特定学习者和学习情境，探索如何改善学习体验、支持持续参与或建立更合适的教育方式。' },
-  { id: '03', domain: '社区文化', title: '社区与文化', description: '关注社区成员在公共生活、邻里连接、文化参与和地方认同等方面的体验。你可以从某类人群、场所或活动切入，探索如何回应社区需求并促进交流、参与、共享或文化传承。' },
-  { id: '04', domain: '数字生活', title: '数字生活', description: '关注数字技术进入工作、消费、社交和日常生活后形成的新体验与新问题。你可以选择具体使用情境，探索便利性、可理解性、包容性、安全、隐私与用户自主控制之间的关系。' },
+  { id: '01', domain: '健康福祉', title: '健康与福祉', description: '关注不同人群在身体健康、心理状态、日常照护和社会支持等方面的真实需求。你可以从具体生活情境出发，识别现有体验中的困难，并探索产品、服务、空间或系统层面的改善机会。', directions: ['日常健康管理与行为支持', '特殊人群的照护与自主生活', '心理感受与社会关系支持', '医疗服务之外的生活体验改善'] },
+  { id: '02', domain: '学习教育', title: '学习与教育', description: '关注人们在知识获取、学习投入、能力发展和协作交流等过程中的需求与障碍。你可以选择特定学习者和学习情境，探索如何改善学习体验、支持持续参与或建立更合适的教育方式。', directions: ['学习动机、习惯与持续参与', '个体差异与包容性学习体验', '同伴协作及师生互动', '学习资源、工具与环境的改进'] },
+  { id: '03', domain: '社区文化', title: '社区与文化', description: '关注社区成员在公共生活、邻里连接、文化参与和地方认同等方面的体验。你可以从某类人群、场所或活动切入，探索如何回应社区需求并促进交流、参与、共享或文化传承。', directions: ['邻里连接与互助关系', '公共空间、服务与社区参与', '地方文化的理解、表达与传承', '不同群体之间的交流与包容'] },
+  { id: '04', domain: '数字生活', title: '数字生活', description: '关注数字技术进入工作、消费、社交和日常生活后形成的新体验与新问题。你可以选择具体使用情境，探索便利性、可理解性、包容性、安全、隐私与用户自主控制之间的关系。', directions: ['数字服务的理解与自主控制', '隐私、安全与信任体验', '不同能力人群的数字包容', '技术便利与生活负担的平衡'] },
 ];
 
 const OPENERS: Record<Mode, string> = {
@@ -158,6 +158,7 @@ export default function Home() {
       <div className="workspace">
         <aside className="task-panel">
           <div className="eyebrow">TASK {task.id}</div><h1>{task.title}</h1><p className="task-description"><b>主题解读</b>{task.description}</p>
+          <div className="exploration-directions"><b>可探索方向</b><ul>{task.directions.map((direction) => <li key={direction}>{direction}</li>)}</ul><small>以上仅供启发，你也可以提出其他方向。</small></div>
           <div className="task-list" aria-label="任务进度">{TASKS.map((item, index) => <button key={item.id} className={index === taskIndex ? 'active' : ''} onClick={() => setTaskIndex(index)}><span>{item.id}</span><span>{item.domain}</span></button>)}</div>
         </aside>
 
