@@ -58,7 +58,7 @@ async function callDeepSeek(
 }
 
 function modelCandidates() {
-  return ['qwen3.8-flash', 'minimax-m3'];
+  return ['minimax-m3', 'qwen3.8-flash'];
 }
 
 function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRepresentation {
