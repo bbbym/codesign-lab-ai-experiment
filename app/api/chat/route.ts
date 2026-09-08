@@ -62,8 +62,11 @@ function modelCandidates() {
 }
 
 function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRepresentation {
-  const latest = [...messages].reverse().find((message) => message.role === 'user')?.content.trim() || taskTitle;
-  const focus = latest.slice(0, 120);
+  const userTurns = messages.filter((message) => message.role === 'user').map((message) => message.content.trim()).filter(Boolean);
+  const latest = userTurns.at(-1) || taskTitle;
+  const previous = userTurns.at(-2) || '';
+  const refersToContext = latest.length < 28 || /^(这|这个|这种|这些|上述|前面|刚才|该|那|相关)|这方面|继续|补充|展开|详细/.test(latest);
+  const focus = (refersToContext && previous ? `${previous}；用户进一步希望：${latest}` : latest).slice(0, 220);
   return {
     design_goal: focus,
     user_needs: [], use_context: [], constraints: [],
@@ -76,8 +79,20 @@ function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRe
   };
 }
 
+function evidenceSentence(value: string) {
+  const cleaned = value
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/\b(?:cited\s+by|by)\b[^。！？；]{0,60}/gi, ' ')
+    .replace(/(?:摘要|abstract|作者|来源|发布时间|关键词|doi)\s*[:：-]?\s*/gi, ' ')
+    .replace(/[#*_[\]{}<>|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const sentences = cleaned.split(/[。！？；]/).map((item) => item.trim()).filter((item) => item.length >= 18 && /[\u4e00-\u9fff]/.test(item));
+  return (sentences.find((item) => !/登录|下载|订阅|广告|版权|研究目的|研究方法/.test(item)) || sentences[0] || '').slice(0, 76);
+}
+
 function localEvidenceReply(mode: Mode, representation: TaskRepresentation, evidence: Array<{ results: SearchResult[] }>) {
-  const facts = evidence.flatMap((item) => item.results).map((item) => item.content.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const facts = evidence.flatMap((item) => item.results.slice(0, 4)).map((item) => evidenceSentence(item.content)).filter(Boolean);
   const first = (facts[0] || '现有研究提示，具体用户、使用情境与现实限制需要同时核对').slice(0, 68);
   const second = (facts[10] || facts[1] || '相关案例的适用条件和实施成本也需要结合目标场景判断').slice(0, 68);
   const issue = representation.design_goal.slice(0, 55);
@@ -129,7 +144,7 @@ export async function POST(request: Request) {
       results: search.results.map(({ title, url, content, score }) => ({ title: title.slice(0, 120), url, content: content.slice(0, 160), score })),
     }));
 
-    const responseSystem = `你是一名参与早期概念设计的AI协作伙伴。围绕开放设计主题“${body.task?.title || '开放设计'}”与用户进行多轮中文对话。下面提供结构化任务表征与三类外部检索结果。优先选择相关性最高且能直接回应当前输入的材料，不要罗列全部资料，不得虚构来源。回复控制在200至260个汉字、4至6个完整句子；包含3至4个有实质内容的信息单元，其中至少两项应是来自检索材料的具体事实、案例、机制或现实约束，并说明它们与当前构想的关系，再依照实验条件辅助方案推进或引导反思。不要只给出分类框架、笼统方向或重复用户输入，不使用Markdown标题或列表。实验条件仅控制回复方式，不得改变任务主题或捏造用户意图。\n\n实验条件：${STYLE[mode]}\n\n结构化任务表征：${JSON.stringify(representation)}\n\n外部信息集合：${JSON.stringify(evidence)}`;
+    const responseSystem = `你是一名参与早期概念设计的AI协作伙伴。围绕开放设计主题“${body.task?.title || '开放设计'}”与用户进行多轮中文对话。必须结合完整对话理解“这方面”“继续说”等指代，直接承接上一轮话题回答，不能把这些追问本身当成设计目标，也不要重复已经说过的内容。下面提供结构化任务表征与三类外部检索结果。优先选择相关性最高且能直接回应当前输入的材料，不要罗列全部资料，不得虚构来源；不要输出网页标题、作者、年份、引用次数、“摘要”等检索元数据或原始片段。回复控制在200至260个汉字、4至6个完整句子；包含3至4个有实质内容的信息单元，其中至少两项应是来自检索材料的具体事实、案例、机制或现实约束，并自然说明它们与当前构想的关系，再依照实验条件辅助方案推进或引导反思。使用自然连贯的对话语言，不要只给出分类框架、笼统方向或重复用户输入，不使用Markdown标题或列表。实验条件仅控制回复方式，不得改变任务主题或捏造用户意图。\n\n实验条件：${STYLE[mode]}\n\n结构化任务表征：${JSON.stringify(representation)}\n\n外部信息集合：${JSON.stringify(evidence)}`;
     let reply = '';
     let responseModel = '';
     const responseCandidates = candidates;
@@ -138,7 +153,7 @@ export async function POST(request: Request) {
         const candidate = await callDeepSeek(deepSeekKey, model, [
           { role: 'system', content: responseSystem },
           ...messages.map(({ role, content }) => ({ role, content })),
-        ], 420, { timeoutMs: 9_000 });
+        ], 420, { timeoutMs: 14_000 });
         reply = candidate;
         responseModel = model;
         attempts.push({ stage: 'response', model, success: true });
