@@ -32,16 +32,21 @@ const TASKS = [
 ];
 
 const EVALUATION_ITEMS = [
-  { dimension: '感知可用性', text: '该AI原型的功能能够满足我完成本次任务的需要。' },
-  { dimension: '感知可用性', text: '该AI原型易于使用。' },
-  { dimension: '交互体验', text: '我与该AI的交互是一段连贯的对话。' },
-  { dimension: '交互体验', text: '该AI能够理解并保持当前对话的上下文。' },
-  { dimension: '交互体验', text: '总体而言，我对与该AI的交互体验感到满意。' },
-  { dimension: '构想发展支持', text: '该AI帮助我探索了不同的设计想法或可能性。' },
-  { dimension: '构想发展支持', text: '该AI帮助我找到可以继续发展当前构想的方向。' },
-  { dimension: '构想发展支持', text: '该AI帮助我有效地完善了当前设计构想。' },
-  { dimension: '反思支持', text: '该AI促使我从新的角度看待当前设计问题。' },
-  { dimension: '反思支持', text: '该AI促使我重新审视当前构想中的假设、限制或被忽略的问题。' },
+  { dimension: '表达体验', text: '该AI的表达方式让我感到被尊重和支持。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '表达体验', text: '该AI的表达方式带有明显的施压或对抗感。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '回应方式', text: '该AI主要通过提供信息或具体方向帮助我继续发展构想。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '回应方式', text: '该AI主要通过提出需要审视的问题引导我反思构想。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '交互体验', text: '总体而言，我对本次与该AI的交互体验感到满意。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '交互体验', text: '我与该AI的交互像是一段连贯的对话。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '构想探索支持', text: '使用该AI原型时，我能够较容易地探索不同的想法、选择、设计或结果。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '构想探索支持', text: '该AI原型帮助我追踪和比较不同的想法、结果或可能性。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '反思性投入', text: '在本次任务中，我重新审视了原有做法，并尝试思考更好的方式。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '反思性投入', text: '在本次任务中，我回顾了自己的思考，并考虑了其他可能的处理方式。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '反思性投入', text: '在本次任务中，我反思了自己的设计判断是否还可以改进。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '反思性投入', text: '在本次任务中，我回顾了本次设计过程，以思考今后如何改进。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '感知创作控制权', text: '在与该AI协作时，我仍然掌握构想的判断和决定权。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '自评构想质量', text: '我认为本次形成的设计构想具有新颖性。', points: 5, low: '非常不同意', high: '非常同意' },
+  { dimension: '自评构想质量', text: '我认为本次形成的设计构想具有实用价值。', points: 5, low: '非常不同意', high: '非常同意' },
 ];
 
 function formatTime(total: number) {
@@ -185,8 +190,8 @@ export default function Home() {
       [label('用户对话轮次'), { value: messages.filter((message) => message.role === 'user').length, type: Number }],
       [label('任务状态'), { value: completed ? '已完成' : '未完成' }], [label('导出时间'), { value: new Date() }],
     ];
-    const scores = [[header('题号'), header('维度'), header('题项'), header('评分')], ...EVALUATION_ITEMS.map((item, index) => [
-      { value: index + 1, type: Number }, { value: item.dimension }, { value: item.text, wrap: true }, { value: evaluation?.ratings[index + 1] ?? '', type: evaluation ? Number : String },
+    const scores = [[header('题号'), header('维度'), header('题项'), header('量表锚点'), header('评分')], ...EVALUATION_ITEMS.map((item, index) => [
+      { value: index + 1, type: Number }, { value: item.dimension }, { value: item.text, wrap: true }, { value: `1=${item.low}；${item.points}=${item.high}`, wrap: true }, { value: evaluation?.ratings[index + 1] ?? '', type: evaluation ? Number : String },
     ])];
     const conversation = [[header('序号'), header('角色'), header('时间'), header('对话内容'), header('技术追踪')], ...messages.map((message, index) => [
       { value: index + 1, type: Number }, { value: message.role === 'user' ? '参与者' : 'AI' }, { value: new Date(message.at) },
@@ -194,7 +199,7 @@ export default function Home() {
     ])];
     const workbook = writeXlsxFile([
       { data: summary, sheet: '实验信息', columns: [{ width: 20 }, { width: 48 }], stickyRowsCount: 1 },
-      { data: scores, sheet: '量表评分', columns: [{ width: 9 }, { width: 18 }, { width: 62 }, { width: 10 }], stickyRowsCount: 1 },
+      { data: scores, sheet: '量表评分', columns: [{ width: 9 }, { width: 18 }, { width: 58 }, { width: 34 }, { width: 10 }], stickyRowsCount: 1 },
       { data: conversation, sheet: '对话记录', columns: [{ width: 9 }, { width: 12 }, { width: 22 }, { width: 70 }, { width: 70 }], stickyRowsCount: 1, orientation: 'landscape' },
     ], { fontFamily: 'Arial', fontSize: 11 });
     const blob = await workbook.toBlob();
@@ -246,9 +251,8 @@ export default function Home() {
       </dialog></div>}
 
       {evaluationOpen && <div className="modal-backdrop evaluation-backdrop"><dialog open className="evaluation-modal" aria-labelledby="evaluation-title">
-        <div className="evaluation-heading"><div><span className="eyebrow">TASK {task.id} EVALUATION</span><h2 id="evaluation-title">评价刚刚使用的AI原型</h2><p>请根据本次任务中的实际体验作答。1＝非常不同意，5＝非常同意。</p></div></div>
-        <div className="evaluation-scale"><span /><span>1<br/><small>非常不同意</small></span><span>2</span><span>3</span><span>4</span><span>5<br/><small>非常同意</small></span></div>
-        <div className="evaluation-items">{EVALUATION_ITEMS.map((item, index) => <div className="evaluation-row" key={item.text}><div><span>{item.dimension}</span><p>{index + 1}. {item.text}</p></div>{[1,2,3,4,5].map((value) => <label key={value}><input type="radio" name={`rating-${index}`} value={value} checked={ratings[index + 1] === value} onChange={() => setRatings((current) => ({ ...current, [index + 1]: value }))}/><i>{value}</i></label>)}</div>)}</div>
+        <div className="evaluation-heading"><div><span className="eyebrow">TASK {task.id} EVALUATION</span><h2 id="evaluation-title">任务后评价</h2><p>请根据刚刚完成的设计任务以及与AI的实际交互体验，判断您对以下陈述的同意程度。1＝非常不同意，2＝不同意，3＝一般，4＝同意，5＝非常同意。</p></div></div>
+        <div className="evaluation-items">{EVALUATION_ITEMS.map((item, index) => <div className="evaluation-row" style={{ gridTemplateColumns: `minmax(330px, 1fr) repeat(${item.points}, 54px)` }} key={item.text}><div><span>{item.dimension}</span><p>{index + 1}. {item.text}</p><small className="scale-anchors">1＝{item.low}　·　{item.points}＝{item.high}</small></div>{Array.from({ length: item.points }, (_, value) => value + 1).map((value) => <label key={value}><input type="radio" name={`rating-${index}`} value={value} checked={ratings[index + 1] === value} onChange={() => setRatings((current) => ({ ...current, [index + 1]: value }))}/><i>{value}</i></label>)}</div>)}</div>
         <div className="evaluation-actions"><Button variant="outline" onClick={() => { setEvaluationOpen(false); setRunning(remaining > 0); }}>返回任务</Button><Button disabled={Object.keys(ratings).length !== EVALUATION_ITEMS.length} onClick={() => { const result = { taskId: task.id, condition: mode, ratings, submittedAt: new Date().toISOString() }; setEvaluations((current) => ({ ...current, [sessionKey]: result })); setCompleted(true); setEvaluationOpen(false); }}>提交评价</Button></div>
       </dialog></div>}
     </main>
