@@ -75,6 +75,7 @@ export default function Home() {
   const [showCondition, setShowCondition] = useState(false);
   const [completed, setCompleted] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const requestInFlightRef = useRef(false);
   const task = TASKS[taskIndex];
   const mode = LATIN_SQUARE[sequenceIndex][taskIndex];
   const sessionKey = `${participantId}-${task.id}-${mode}`;
@@ -140,6 +141,8 @@ export default function Home() {
   const progress = useMemo(() => Math.round(((900 - remaining) / 900) * 100), [remaining]);
 
   async function requestReply(history: Message[]) {
+    if (requestInFlightRef.current) return;
+    requestInFlightRef.current = true;
     setLoading(true); setRequestError(null);
     try {
       let lastReason = 'AI服务暂时不可用';
@@ -148,7 +151,11 @@ export default function Home() {
           const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, task, messages: history }) });
           const data = (await response.json()) as { reply?: string; error?: string; trace?: unknown };
           if (!response.ok || !data.reply) throw new Error(data.error || '请求失败');
-          setMessages((current) => [...current, { role: 'assistant', content: data.reply!, at: new Date().toISOString(), trace: data.trace }]);
+          setMessages((current) => {
+            const last = current.at(-1);
+            if (last?.role === 'assistant' && last.content.trim() === data.reply!.trim()) return current;
+            return [...current, { role: 'assistant', content: data.reply!, at: new Date().toISOString(), trace: data.trace }];
+          });
           return;
         } catch (error) {
           lastReason = error instanceof Error ? error.message : 'AI服务暂时不可用';
@@ -156,13 +163,13 @@ export default function Home() {
         }
       }
       setRequestError(`${lastReason}。可重新尝试，原输入不会重复记录。`);
-    } finally { setLoading(false); }
+    } finally { requestInFlightRef.current = false; setLoading(false); }
   }
 
   async function sendMessage(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = input.trim();
-    if (!content || loading || completed) return;
+    if (!content || loading || requestInFlightRef.current || completed) return;
     if (!running) setRunning(true);
     const userMessage: Message = { role: 'user', content, at: new Date().toISOString() };
     const next = [...messages, userMessage];
