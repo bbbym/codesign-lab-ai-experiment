@@ -31,7 +31,7 @@ async function callDeepSeek(
   maxTokens: number,
   options: { json?: boolean; temperature?: number; timeoutMs?: number } = {},
 ) {
-  const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
+  const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://laneai.dev/v1').replace(/\/$/, '');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 12_000);
   const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -42,7 +42,6 @@ async function callDeepSeek(
       model,
       temperature: options.temperature ?? 0.7,
       max_tokens: maxTokens,
-      thinking: { type: 'disabled' },
       messages,
       ...(options.json ? { response_format: { type: 'json_object' } } : {}),
     }),
@@ -58,7 +57,7 @@ async function callDeepSeek(
 }
 
 function modelCandidates() {
-  return ['minimax-m3', 'qwen3.8-flash'];
+  return [process.env.DEEPSEEK_MODEL || 'deepseek-v4-pro'];
 }
 
 function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRepresentation {
@@ -173,14 +172,16 @@ export async function POST(request: Request) {
       }
     }
     if (!reply) {
-      reply = localEvidenceReply(mode, representation, evidence);
-      responseModel = 'local-evidence-fallback';
+      return Response.json({
+        error: 'AI生成服务暂时不可用，请稍后重新尝试。',
+        trace: { pipelineVersion: 'three-stage-v4-laneai', attempts },
+      }, { status: 502 });
     }
 
     return Response.json({
       reply,
       trace: {
-        pipelineVersion: 'three-stage-v3-single-llm-top10',
+        pipelineVersion: 'three-stage-v4-laneai',
         model: responseModel,
         representationModel,
         responseModel,
