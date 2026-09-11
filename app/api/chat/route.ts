@@ -64,9 +64,8 @@ function modelCandidates() {
 function localRepresentation(taskTitle: string, messages: ChatMessage[]): TaskRepresentation {
   const userTurns = messages.filter((message) => message.role === 'user').map((message) => message.content.trim()).filter(Boolean);
   const latest = userTurns.at(-1) || taskTitle;
-  const previous = userTurns.at(-2) || '';
-  const refersToContext = latest.length < 28 || /^(这|这个|这种|这些|上述|前面|刚才|该|那|相关)|这方面|继续|补充|展开|详细/.test(latest);
-  const focus = (refersToContext && previous ? `${previous}；用户进一步希望：${latest}` : latest).slice(0, 220);
+  const original = userTurns[0] || taskTitle;
+  const focus = (userTurns.length > 1 ? `${original}；当前请求：${latest}` : latest).slice(0, 320);
   return {
     design_goal: focus,
     user_needs: [], use_context: [], constraints: [],
@@ -83,7 +82,8 @@ function localEvidenceReply(mode: Mode, representation: TaskRepresentation, evid
   const topics = evidence.flatMap((item) => item.results.slice(0, 4)).map((item) => item.title.replace(/^\[?PDF\]?\s*/i, '').replace(/\s*[-_|].*$/, '').trim()).filter((item, index, all) => item.length >= 6 && all.indexOf(item) === index);
   const first = topics[0] || '目标用户的具体困难与使用情境';
   const second = topics.find((item) => item !== first) || '相关方案的适用条件与实施限制';
-  const issue = representation.design_goal.split('；用户进一步希望：')[0].slice(0, 55);
+  const [originalIssue, currentRequest = ''] = representation.design_goal.split('；当前请求：');
+  const issue = originalIssue.slice(0, 80);
   if (/药品|药物|吃药|服药|用药|药盒|处方/.test(issue)) {
     if (mode === 'SA') return '你关注的四类困难可以对应到三个设计环节。药品识别可结合大字标签、颜色与形状编码，但不能只靠颜色；服药前应根据个人药单核对药名、剂量和时间，冲突提示需由可靠药物数据库或药师确认，避免让老人按症状自行选药。取药结构可考虑按压弹出、倾斜药仓或整板药托，并让家属或药师协助完成首次录入。你可以先选一种高频用药情境，画出“识别—核对—取药—确认”的流程。';
     if (mode === 'SR') return '你已经把记忆、识别、用药安全和操作能力四类困难放在了一起。可以继续想一想：系统是在帮助老人按既定医嘱取药，还是允许他们根据症状决定吃什么药？这两种目标对应的安全责任并不相同。若药盒提示与纸质处方、家属录入或药师记录不一致，老人应相信哪一个，又如何获得确认？取药便利也值得放到真实手部力量、视力和多药并用的情境中检视。';
@@ -91,6 +91,11 @@ function localEvidenceReply(mode: Mode, representation: TaskRepresentation, evid
     return '目前最需要审视的是系统的安全边界。先回答：它是在提醒老人执行既定医嘱，还是在帮助老人根据症状选择药物？如果药盒、处方、家属录入和药师记录出现不一致，谁拥有最终确认权？还要分别检查看不清、记不住、手部力量不足和多药冲突发生时，用户在哪一步最容易出错；这些判断会决定你需要的是信息提示、专业核验，还是取药结构改造。';
   }
   if (/(隔代|家庭|家人|亲属|子女).*(沟通|交流|联系)|(远程|异地).*(照护|健康|陪伴)/.test(issue)) {
+    const asksForDefinition = /情境|功能|亮点|画像|一起|共同|判断|定义/.test(currentRequest);
+    if (asksForDefinition && mode === 'SA') return '可以，我们先把它具体化。核心用户可定义为独居或留守、具有基本自理能力但数字操作经验有限的老人，以及异地居住、希望参与照护的成年子女和孙辈。重点情境包括日常报平安、儿童主动发起陪伴、服药或活动提醒，以及老人长时间未回应时的分级联络。功能亮点可放在“双向参与”：老人用一个动作回应或发起联系，孩子用语音、照片和简短任务参与陪伴；健康信息只共享趋势和异常，不持续展示全部数据。下一步可以先选择“晚间报平安”作为核心情境展开。';
+    if (asksForDefinition && mode === 'SR') return '可以先共同厘清这个装置究竟服务于“维系亲情”还是“远程照护”，因为两者会形成不同的用户画像与功能重点。对于老人，需要考虑其独居状态、操作能力、健康风险和被监控感；对于孩子及其父母，则要区分陪伴意愿、照护责任和可投入时间。你希望优先处理日常联系、健康提醒，还是异常情况下的求助？如果只能突出一个亮点，什么价值是普通视频通话无法替代的？';
+    if (asksForDefinition && mode === 'CA') return '先不要继续泛化功能，必须把目标用户和核心场景定下来。用户画像应至少区分独居老人、异地成年子女和参与交流的孙辈，并明确谁负责设备设置与异常处理。场景先锁定日常报平安、儿童陪伴和异常联络三类；亮点不能只是视频通话加健康监测，而应形成老人能主动回应、孩子能轻量参与、异常信息分级通知的闭环。先选一个主场景，否则功能会继续堆叠。';
+    if (asksForDefinition) return '先审视三项关键判断：这个装置的首要目标是缓解孤独、促进隔代关系，还是降低远程照护的不确定感？老人、成年子女和孙辈在其中分别是主要用户、照护者，还是陪伴者？日常无回应在什么条件下才应升级为健康异常，而不是隐私或生活节奏问题？这些答案会决定核心情境，也能检验所谓“功能亮点”是否真正超越普通视频通话和健康手环。';
     if (mode === 'SA') return '这个方向把家庭沟通与远程健康照护联系起来了。可以将装置分为日常交流、健康状态共享和异常联络三个层次：平时支持低门槛的语音或视频联系；健康信息只呈现老人愿意共享的少量指标；出现异常时，再按预先约定通知家人或照护者。为了避免装置变成单向监控，可以加入老人可见的共享状态、暂停共享和主动发起联系功能。你可以先画出老人和孩子各自发起一次互动的流程。';
     if (mode === 'SR') return '这个构想同时涉及亲情交流与健康照护，但两者的关系还值得进一步审视。孩子远程了解健康状态时，老人会感到被关心，还是被持续监控？哪些信息适合日常共享，哪些只有出现异常并获得同意后才能发送？如果老人没有回应，系统应把它理解为暂时不方便、设备操作失败，还是健康风险？这些不同解释会直接影响提醒方式、隐私边界和家人介入程度。';
     if (mode === 'CA') return '不要把“促进沟通”和“远程照护”合并成一个含糊目标。先区分日常交流、健康信息共享与异常求助三条流程，并明确每条流程由谁发起、共享什么、何时结束。健康信息不能默认全部向家人开放，必须提供老人可见的授权、暂停和撤回机制；未回应也不能直接判定为健康异常。先用一次日常联系和一次异常联络验证完整流程，再决定需要哪些传感器和通信功能。';
